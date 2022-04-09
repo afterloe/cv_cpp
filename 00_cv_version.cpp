@@ -5,6 +5,8 @@
 
 int main()
 {
-    printf("version is %s\n", CV_VERSION);
+
+    std::cout << CV_VERSION << std::endl;
+    // printf("version is %s\n", CV_VERSION);
     return 0;
 }
