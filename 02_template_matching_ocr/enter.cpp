@@ -1,12 +1,14 @@
 #include "opencv2/opencv.hpp"
+#include "opencv2/core/hal/interface.h"
 
 #include <iostream>
+#include <numeric>
 
 extern void help(const char **);
 
 const char *keys = {
     "{help h usage ? |     | print this message}"
-    "{@image | ./credit_card_01.png | need ocr image}"
+    "{@image    | /home/afterloe/Projects/cv_cpp/02_template_matching_ocr/images/credit_card_01.png  | need ocr image}"
     "{@template | /home/afterloe/Projects/cv_cpp/02_template_matching_ocr/images/ocr_a_reference.png | scan img template }"};
 
 int main(int argc, const char **argv)
@@ -18,15 +20,15 @@ int main(int argc, const char **argv)
         return EXIT_SUCCESS;
     }
 
-    cv::Mat tmpl = cv::imread(parser.get<std::string>("@template"), cv::IMREAD_COLOR);
-    if (tmpl.empty())
+    cv::Mat tmpleate_img = cv::imread(parser.get<std::string>("@template"), cv::IMREAD_COLOR);
+    if (tmpleate_img.empty())
     {
         perror("[ERROR]");
         printf("[ERROR]: 模板未加载。");
         return EXIT_FAILURE;
     }
     cv::Mat threshed;
-    cv::cvtColor(tmpl, threshed, cv::COLOR_BGR2GRAY);
+    cv::cvtColor(tmpleate_img, threshed, cv::COLOR_BGR2GRAY);
     cv::threshold(threshed, threshed, 10, 255, cv::THRESH_BINARY_INV);
 
     std::vector<std::vector<cv::Point>> contours;
@@ -36,70 +38,150 @@ int main(int argc, const char **argv)
     std::vector<cv::Rect2f> fragments(contours.size());
     for (int idx = 0; idx < contours.size(); idx++)
     {
-        // cv::rectangle(tmpl, box, color, 2, cv::LINE_4);
         fragments.push_back(cv::boundingRect(contours[idx]));
-
-        // cv::RotatedRect box = cv::minAreaRect(contours[idx]);
-        // std::vector<cv::Point2f> box_pts(4);
-        // box.points(box_pts.data());
-
-        // float x_ptr, y_ptr, fragment_width, fragment_height;
-        // x_ptr = box_pts[0].x;
-        // y_ptr = box_pts[0].y;
-        // fragment_width = box_pts[1].x - x_ptr;
-        // fragment_height = box_pts[2].y - y_ptr;
-
-        // std::cout << box_pts << std::endl;
-        // std::cout << x_ptr << " - " << y_ptr << " - " << fragment_width << " - " << fragment_height << " - " << std::endl;
-        // std::cout << "------ ------------- -------" << std::endl;
-
-        // for (int j = 0; j < 4; j++)
-        // {
-        //     std::cout << box_pts[j].x << " | " << box_pts[j].y << std::endl;
-        //     std::cout << box_pts[(j + 1) % 4] << std::endl;
-        //     std::cout << "------ -------- --------- ----------"<< std::endl;
-        //     line(tmpl, box_pts[j], box_pts[(j + 1) % 4], color, 2, cv::LINE_4);
-        // }
-        // std::cout << box_pts << std::endl;
-
-        // x y width h
-
-        // cv::Mat fragment = tmpl(cv::Rect2f(x_ptr, y_ptr, fragment_width, fragment_height));
-        // cv::imshow("f", fragment);
-        // cv::waitKey(0);
-
-        // break;
-        // fragments.push_back();
     }
-
     std::sort(fragments.begin(), fragments.end(), [](cv::Rect2f a, cv::Rect2f b) -> bool
               { return a.x < b.x; });
 
-    for (int idx = 0; idx < fragments.size(); idx++)
+    cv::Mat rect_kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(9, 3));
+    cv::Mat sq_kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
+    std::string file_name = parser.get<std::string>("@image");
+    std::cout << "[INFO]: load image from " << file_name << std::endl;
+
+    cv::Mat ocr_image = cv::imread(file_name, cv::IMREAD_COLOR);
+    if (ocr_image.empty())
     {
-        if (fragments[idx].empty())
+        perror("[ERROR]");
+        printf("[ERROR]: 图片未找到。");
+        return EXIT_FAILURE;
+    }
+
+    float r = 300.0f / ocr_image.cols;
+    cv::resize(ocr_image, ocr_image, cv::Size(300, int(ocr_image.rows * r)), 0, 0, cv::INTER_AREA);
+
+    cv::Mat ocr_image_tmp = ocr_image.clone();
+    cv::cvtColor(ocr_image, ocr_image_tmp, cv::COLOR_BGR2GRAY);
+
+    cv::Mat ocr_gray_image_tmp = ocr_image_tmp.clone();
+    cv::morphologyEx(ocr_image_tmp, ocr_image_tmp, cv::MORPH_TOPHAT, rect_kernel);
+    cv::morphologyEx(ocr_image_tmp, ocr_image_tmp, cv::MORPH_CLOSE, rect_kernel);
+    cv::threshold(ocr_image_tmp, ocr_image_tmp, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+    cv::morphologyEx(ocr_image_tmp, ocr_image_tmp, cv::MORPH_CLOSE, sq_kernel);
+
+    std::vector<std::vector<cv::Point>> ocr_contours;
+    cv::findContours(ocr_image_tmp, ocr_contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    cv::drawContours(ocr_image, ocr_contours, -1, COLOR_RED, 3, cv::LINE_AA);
+
+    std::vector<cv::Rect2f> ocr_fragments(ocr_contours.size());
+    for (int idx = 0; idx < ocr_contours.size(); idx++)
+    {
+        cv::Rect2f box = cv::boundingRect(ocr_contours[idx]);
+        float ar = box.width / float(box.height);
+        if (ar < 2.5 || ar > 4.0)
         {
             continue;
         }
-
-        std::cout << fragments[idx] << std::endl;
-
-        cv::imshow("f", tmpl(fragments[idx]));
-        cv::waitKey(0);
+        if (box.width < 40 || box.width > 55)
+        {
+            continue;
+        }
+        if (box.height < 10 || box.height > 20)
+        {
+            continue;
+        }
+        ocr_fragments.push_back(box);
     }
 
-    // std::string file_name = parser.get<std::string>("@image");
-    // std::cout << "[INFO]: load image from " << file_name << std::endl;
+    std::sort(ocr_fragments.begin(), ocr_fragments.end(), [](cv::Rect2f a, cv::Rect2f b) -> bool
+              { return a.x < b.x; });
+    std::vector<char *> card_num(ocr_fragments.size());
 
-    // cv::Mat image_src = cv::imread(file_name, cv::IMREAD_COLOR);
-    // if (image_src.empty())
-    // {
-    //     perror("[ERROR]");
-    //     printf("[ERROR]: 图片未找到。");
-    //     return EXIT_FAILURE;
-    // }
-    // cv::imshow("src", image_src);
+    for (int idx = 0; idx < ocr_fragments.size(); idx++)
+    {
+        if (ocr_fragments[idx].empty())
+        {
+            continue;
+        }
+        cv::Mat nums = ocr_gray_image_tmp(ocr_fragments[idx]);
 
+        cv::threshold(nums, nums, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+        std::vector<std::vector<cv::Point>> nums_contours;
+        cv::findContours(nums, nums_contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+        std::vector<cv::Rect2f> items_ocr_fragments(contours.size());
+        for (int i = 0; i < nums_contours.size(); i++)
+        {
+            items_ocr_fragments.push_back(cv::boundingRect(nums_contours[i]));
+        }
+        std::sort(items_ocr_fragments.begin(), items_ocr_fragments.end(), [](cv::Rect2f a, cv::Rect2f b) -> bool
+                  { return a.x < b.x; });
+
+        for (int i = 0; i < items_ocr_fragments.size(); i++)
+        {
+            if (items_ocr_fragments[i].empty())
+            {
+                continue;
+            }
+            cv::Mat num = nums(items_ocr_fragments[i]);
+            cv::resize(num, num, cv::Size(57, 88));
+            // double *sources = (double *)malloc(fragments.size());
+
+            std::vector<double> sources(fragments.size());
+
+            cv::Mat result;
+            double min_val, max_val;
+            cv::Point minLoc, maxLoc;
+            for (int j = 0; j < fragments.size(); j++)
+            {
+                if (fragments[j].empty())
+                {
+                    continue;
+                }
+                cv::Mat num_tmp = threshed(fragments[j]);
+                cv::resize(num_tmp, num_tmp, cv::Size(57, 88));
+                cv::matchTemplate(num, num_tmp, result, cv::TM_CCOEFF);
+                cv::minMaxLoc(result, &min_val, &max_val, &minLoc, &maxLoc, cv::Mat());
+                // sources[j] = max_val;
+                sources.push_back(max_val);
+                // printf("%.3f ", max_val);
+            }
+
+            int val = -1, index = 0;
+            double s = 0.0;
+            printf("[");
+            for (int j = 0; j < sources.size(); j++)
+            {
+                if (0 == sources[j])
+                {
+                    continue;
+                }
+                printf("%.3f ", sources[j]);
+
+                if (sources[j] > s)
+                {
+                    s = sources[j];
+                    val = index;
+                }
+                index++;
+            }
+            printf("]");
+            printf("\n");
+            printf("%d \n", val);
+            char *num_str = (char *)malloc(1);
+            sprintf(num_str, "%d", val);
+            card_num.push_back(num_str);
+            printf("--------------- ----------------- ---------------\n");
+        }
+    }
+
+    printf("银行卡号： ");
+    for (int idx = 0; idx < card_num.size(); idx++)
+    {
+        if (card_num[idx] != NULL)
+        {
+            printf("%s", card_num[idx]);
+        }
+    }
+    printf("\n");
     cv::destroyAllWindows();
 
     return EXIT_SUCCESS;
