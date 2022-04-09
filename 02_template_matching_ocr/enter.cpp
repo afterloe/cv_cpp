@@ -63,6 +63,9 @@ int main(int argc, const char **argv)
     cv::cvtColor(ocr_image, ocr_image_tmp, cv::COLOR_BGR2GRAY);
 
     cv::Mat ocr_gray_image_tmp = ocr_image_tmp.clone();
+
+    cv::GaussianBlur(ocr_image_tmp, ocr_image_tmp, cv::Size(3, 3), 1);
+
     cv::morphologyEx(ocr_image_tmp, ocr_image_tmp, cv::MORPH_TOPHAT, rect_kernel);
     cv::morphologyEx(ocr_image_tmp, ocr_image_tmp, cv::MORPH_CLOSE, rect_kernel);
     cv::threshold(ocr_image_tmp, ocr_image_tmp, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
@@ -70,7 +73,7 @@ int main(int argc, const char **argv)
 
     std::vector<std::vector<cv::Point>> ocr_contours;
     cv::findContours(ocr_image_tmp, ocr_contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-    cv::drawContours(ocr_image, ocr_contours, -1, COLOR_RED, 3, cv::LINE_AA);
+    // cv::drawContours(ocr_image, ocr_contours, -1, COLOR_RED, 3, cv::LINE_AA);
 
     std::vector<cv::Rect2f> ocr_fragments(ocr_contours.size());
     for (int idx = 0; idx < ocr_contours.size(); idx++)
@@ -182,6 +185,9 @@ int main(int argc, const char **argv)
         }
     }
     printf("\n");
+    cv::imshow("ocr_image", ocr_image);
+    cv::waitKey(0);
+
     cv::destroyAllWindows();
 
     return EXIT_SUCCESS;
